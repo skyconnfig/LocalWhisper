@@ -314,5 +314,346 @@ AI服务：Ollama + 本地Whisper模型
 
 ---
 
+---
+
+## 🎯 本地AI模型推荐配置
+
+### Whisper语音转录模型
+
+#### OpenAI Whisper官方模型推荐
+```bash
+# 安装Whisper
+pip install openai-whisper
+
+# 推荐模型选择
+whisper audio.mp3 --model medium    # 最佳平衡点（推荐）
+whisper audio.mp3 --model base      # 速度优先
+whisper audio.mp3 --model large-v3  # 精度优先
+```
+
+| 模型 | 大小 | 速度 | 精度 | 推荐场景 | 硬件要求 |
+|------|------|------|------|----------|----------|
+| **medium** | ~769MB | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | **最佳平衡** | 8GB+ RAM |
+| base | ~142MB | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | 快速转录 | 4GB+ RAM |
+| large-v3 | ~1550MB | ⭐⭐ | ⭐⭐⭐⭐⭐ | 高精度需求 | 16GB+ RAM |
+
+#### Faster-Whisper（强烈推荐）
+```bash
+# 更高效的Whisper实现
+pip install faster-whisper
+
+# Python集成示例
+from faster_whisper import WhisperModel
+
+model = WhisperModel("medium", device="cpu", compute_type="int8")
+segments, info = model.transcribe("audio.mp3", language="zh")
+```
+**优势**：比官方Whisper快4-5倍，内存占用少50%
+
+### Ollama大语言模型推荐
+
+#### 核心LLM模型配置
+
+**1. Llama 3.1 8B**（主力推荐）
+```bash
+ollama pull llama3.1:8b
+```
+- **用途**：文本转换、摘要、格式化
+- **优势**：中英文支持优秀，速度快，质量高
+- **硬件要求**：8GB+ RAM
+- **适合场景**：通用文本处理，多语言支持
+
+**2. Qwen2.5 7B**（中文特化）
+```bash
+ollama pull qwen2.5:7b
+```
+- **用途**：专门处理中文内容转换
+- **优势**：中文理解能力极强，国产化
+- **适合场景**：中文语音转录后处理
+
+**3. Gemma2 9B**（轻量高效）
+```bash
+ollama pull gemma2:9b
+```
+- **用途**：轻量级文本处理
+- **优势**：Google出品，效率高，资源占用少
+- **适合场景**：资源受限环境
+
+### 硬件配置建议
+
+#### 8GB RAM系统
+```bash
+# 推荐配置
+Whisper: base 或 small
+LLM: llama3.1:8b 或 gemma2:7b
+```
+
+#### 16GB RAM系统（最佳配置）
+```bash
+# 推荐配置
+Whisper: medium（最佳平衡）
+LLM: llama3.1:8b + qwen2.5:7b（双模型）
+```
+
+#### 32GB+ RAM系统
+```bash
+# 高性能配置
+Whisper: large-v3
+LLM: llama3.1:70b（最高质量）
+```
+
+---
+
+## 🔧 本地模型集成代码
+
+### 1. Whisper本地转录集成
+
+**替换Together.ai服务**（app/api/transform/route.ts）：
+
+```typescript
+// 原代码替换
+import { WhisperModel } from 'faster-whisper';
+
+// 初始化本地Whisper模型
+const whisperModel = new WhisperModel("medium", {
+  device: "cpu",
+  compute_type: "int8"
+});
+
+// 本地转录函数
+async function transcribeLocal(audioPath: string, language?: string) {
+  const segments = await whisperModel.transcribe(audioPath, {
+    language: language || "auto",
+    word_timestamps: true,
+    vad_filter: true, // 语音活动检测
+  });
+  
+  return {
+    fullTranscription: segments.map(s => s.text).join(' '),
+    segments: segments,
+    language: segments.language
+  };
+}
+```
+
+### 2. Ollama本地LLM集成
+
+```typescript
+// 本地LLM转换服务
+import ollama from 'ollama';
+
+async function transformWithOllama(transcription: string, typeName: string) {
+  const prompts = {
+    summary: `请将以下转录内容总结为100字以内的摘要，保持原语言：\n\n${transcription}`,
+    'quick-note': `请将以下转录内容整理为简洁的便签格式：\n\n${transcription}`,
+    list: `请将以下转录内容提取关键点并整理为条目列表：\n\n${transcription}`,
+    blog: `请将以下转录内容整理为一篇结构清晰的博客文章，包含标题和段落：\n\n${transcription}`,
+    email: `请将以下转录内容整理为一封正式邮件，包含主题行和正文：\n\n${transcription}`
+  };
+
+  // 根据内容语言选择模型
+  const isChineseContent = /[\u4e00-\u9fa5]/.test(transcription);
+  const model = isChineseContent ? 'qwen2.5:7b' : 'llama3.1:8b';
+
+  const response = await ollama.chat({
+    model: model,
+    messages: [{ role: 'user', content: prompts[typeName] }],
+    stream: true,
+    options: {
+      temperature: 0.7,
+      max_tokens: 2000
+    }
+  });
+
+  return response;
+}
+```
+
+### 3. 文件存储本地化
+
+```typescript
+// 替换S3上传为本地存储
+import { promises as fs } from 'fs';
+import path from 'path';
+
+const UPLOAD_DIR = './uploads';
+
+async function saveAudioLocally(file: File): Promise<string> {
+  const fileName = `${Date.now()}-${file.name}`;
+  const filePath = path.join(UPLOAD_DIR, fileName);
+  
+  // 确保上传目录存在
+  await fs.mkdir(UPLOAD_DIR, { recursive: true });
+  
+  // 保存文件
+  const buffer = Buffer.from(await file.arrayBuffer());
+  await fs.writeFile(filePath, buffer);
+  
+  return filePath;
+}
+```
+
+---
+
+## 📦 完整本地部署Docker配置
+
+### docker-compose.yml
+```yaml
+version: '3.8'
+services:
+  whisper-app:
+    build: .
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+      - redis  
+      - ollama
+    volumes:
+      - ./uploads:/app/uploads
+      - ./whisper-models:/app/models
+    environment:
+      - DATABASE_URL=postgresql://whisper:password@postgres:5432/whisper
+      - REDIS_URL=redis://redis:6379
+      - OLLAMA_HOST=http://ollama:11434
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    # GPU支持（可选）
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: whisper
+      POSTGRES_USER: whisper
+      POSTGRES_PASSWORD: password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  ollama_models:
+  postgres_data:
+```
+
+### 快速启动脚本（setup-local.sh）
+```bash
+#!/bin/bash
+echo "🚀 启动本地Whisper应用..."
+
+# 1. 启动Docker服务
+echo "启动Docker容器..."
+docker-compose up -d
+
+# 2. 等待服务启动
+echo "等待服务启动..."
+sleep 15
+
+# 3. 下载推荐AI模型
+echo "下载Ollama模型..."
+docker exec whisper-ollama-1 ollama pull llama3.1:8b
+docker exec whisper-ollama-1 ollama pull qwen2.5:7b
+
+# 4. 安装Python Whisper依赖
+echo "安装Whisper依赖..."
+pip install faster-whisper
+
+# 5. 数据库初始化
+echo "初始化数据库..."
+docker exec whisper-whisper-app-1 npm run db:push
+
+echo "✅ 本地部署完成！"
+echo "🌐 访问地址: http://localhost:3000"
+echo "🗄️  数据库管理: http://localhost:3000/api/studio"
+echo "🤖 Ollama API: http://localhost:11434"
+```
+
+### 环境变量配置（.env.local）
+```bash
+# 数据库配置
+DATABASE_URL="postgresql://whisper:password@localhost:5432/whisper"
+
+# Redis配置
+REDIS_URL="redis://localhost:6379"
+
+# Ollama配置
+OLLAMA_HOST="http://localhost:11434"
+
+# 本地文件存储
+UPLOAD_PATH="./uploads"
+WHISPER_MODEL_PATH="./models"
+
+# 认证配置（如使用NextAuth.js）
+NEXTAUTH_SECRET="your-secret-key"
+NEXTAUTH_URL="http://localhost:3000"
+
+# 应用配置
+NODE_ENV="development"
+```
+
+---
+
+## 🎯 模型选择决策指南
+
+### 场景化推荐
+
+**中文为主的应用**：
+```bash
+# 最佳配置
+Whisper: medium (指定 language="zh")
+LLM: qwen2.5:7b
+备用: llama3.1:8b
+```
+
+**英文为主的应用**：
+```bash
+# 最佳配置  
+Whisper: medium
+LLM: llama3.1:8b
+备用: gemma2:9b
+```
+
+**多语言混合应用**：
+```bash
+# 通用配置
+Whisper: large-v3 (自动检测语言)
+LLM: llama3.1:8b (多语言支持好)
+```
+
+**资源受限环境**：
+```bash
+# 轻量配置
+Whisper: base
+LLM: gemma2:7b
+```
+
+### 性能优化建议
+
+1. **启用量化**：使用int8量化减少内存占用
+2. **批处理**：支持多文件并行转录
+3. **缓存策略**：常用模型保持内存驻留
+4. **GPU加速**：有条件时启用CUDA支持
+
+---
+
 *报告生成时间：2025-08-01*
 *项目版本：0.1.0*
