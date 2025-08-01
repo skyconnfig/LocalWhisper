@@ -9,7 +9,7 @@ import {
 import Dropzone from "react-dropzone";
 import React, { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { useS3Upload } from "next-s3-upload";
+import { useLocalUpload } from "./hooks/useLocalUpload";
 import { useRouter } from "next/navigation";
 import { useTRPC } from "@/trpc/client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -39,7 +39,7 @@ export function UploadModal({ onClose }: { onClose: () => void }) {
   >("idle");
 
   const [isDragActive, setIsDragActive] = useState(false);
-  const { uploadToS3 } = useS3Upload();
+  const { uploadToS3 } = useLocalUpload();
   const router = useRouter();
   const trpc = useTRPC();
   const { apiKey } = useTogetherApiKey();
@@ -61,15 +61,15 @@ export function UploadModal({ onClose }: { onClose: () => void }) {
       }
       setIsProcessing("uploading");
       try {
-        // Run duration extraction and S3 upload in parallel
-        const [duration, { url }] = await Promise.all([
+        // Run duration extraction and local upload in parallel
+        const [duration, uploadResult] = await Promise.all([
           getDuration(file),
-          uploadToS3(file),
+          uploadToLocal(file),
         ]);
         // Call tRPC mutation
         setIsProcessing("transcribing");
         const { id } = await transcribeMutation.mutateAsync({
-          audioUrl: url,
+          audioUrl: uploadResult.url,
           language,
           durationSeconds: Math.round(duration),
         });
@@ -80,9 +80,10 @@ export function UploadModal({ onClose }: { onClose: () => void }) {
         router.push(`/whispers/${id}`);
       } catch (err) {
         toast.error("Failed to transcribe audio. Please try again.");
+        setIsProcessing("idle");
       }
     },
-    [uploadToS3, transcribeMutation, router]
+    [uploadToLocal, transcribeMutation, router, language, trpc.whisper.listWhispers, queryClient]
   );
 
   return (

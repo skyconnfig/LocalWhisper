@@ -1,0 +1,36 @@
+{
+  "name": "whisper-tests",
+  "version": "1.0.0",
+  "description": "Comprehensive test suite for Whisper local deployment",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:services": "node services/test-services.js",
+    "test:api": "node api/test-api-endpoints.js",
+    "test:e2e": "node e2e/test-e2e.js",
+    "test:performance": "node performance/test-performance.js",
+    "test:error-handling": "node error-handling/test-error-handling.js",
+    "test:all": "npm run test:services && npm run test:api && npm run test:e2e && npm run test:performance && npm run test:error-handling",
+    "report": "node utils/generate-report.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "jest": "^29.7.0",
+    "puppeteer": "^21.0.0",
+    "form-data": "^4.0.0",
+    "ws": "^8.14.0",
+    "pg": "^8.11.0",
+    "redis": "^4.6.0",
+    "minio": "^7.1.0",
+    "chalk": "^4.1.2",
+    "ora": "^5.4.1",
+    "node-cron": "^3.0.3",
+    "performance-now": "^2.1.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.0.0"
+  }
+}

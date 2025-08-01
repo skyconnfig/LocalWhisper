@@ -16,7 +16,7 @@ import { useTogetherApiKey } from "./TogetherApiKeyProvider";
 import useLocalStorage from "./hooks/useLocalStorage";
 import { AudioWaveform } from "./AudioWaveform";
 import { useAudioRecording } from "./hooks/useAudioRecording";
-import { useS3Upload } from "next-s3-upload";
+import { useLocalUpload } from "./hooks/useLocalUpload";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -38,7 +38,7 @@ declare global {
 export function RecordingModal({ onClose }: RecordingModalProps) {
   const [language, setLanguage] = useLocalStorage("language", "en");
 
-  const { uploadToS3 } = useS3Upload();
+  const { uploadToS3 } = useLocalUpload();
 
   const {
     recording,
@@ -96,17 +96,17 @@ export function RecordingModal({ onClose }: RecordingModalProps) {
     }
     setIsProcessing("uploading");
     try {
-      // Upload to S3
+      // Upload to local storage
       const file = new File([audioBlob], `recording-${Date.now()}.webm`, {
         type: "audio/webm",
       });
-      const { url } = await uploadToS3(file);
+      const uploadResult = await uploadToLocal(file);
       // Call tRPC mutation
 
       setIsProcessing("transcribing");
 
       const { id } = await transcribeMutation.mutateAsync({
-        audioUrl: url,
+        audioUrl: uploadResult.url,
         language,
         durationSeconds: duration,
       });

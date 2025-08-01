@@ -7,8 +7,12 @@ import { limitMinutes } from "@/lib/limits";
 import {
   togetherBaseClientWithKey,
   togetherVercelAiClient,
+  transcribeWithLocalWhisper,
+  createLocalLLMClient,
+  getLocalLLMModel,
 } from "@/lib/apiClients";
 import { generateText } from "ai";
+import { deleteFileLocally, getFilenameFromUrl } from "@/lib/fileUtils";
 
 const prisma = new PrismaClient();
 
@@ -56,27 +60,23 @@ export const whisperRouter = t.router({
         throw new Error("You have exceeded your daily audio minutes limit.");
       }
 
-      const res = await togetherBaseClientWithKey(
-        ctx.togetherApiKey
-      ).audio.transcriptions.create({
-        // @ts-ignore: Together API accepts file URL as string, even if types do not allow
-        file: input.audioUrl,
-        model: "openai/whisper-large-v3",
-        language: input.language || "en",
-      });
+      // Use local Whisper service for transcription
+      const res = await transcribeWithLocalWhisper(
+        input.audioUrl,
+        input.language || "en"
+      );
 
       const transcription = res.text as string;
 
-      // Generate a title from the transcription (first 8 words or fallback)
+      // Generate a title from the transcription using local LLM
+      const localLLMClient = createLocalLLMClient();
       const { text: title } = await generateText({
         prompt: `Generate a title for the following transcription with max of 10 words/80 characters: 
         ${transcription}
         
         Only return the title, nothing else, no explanation and no quotes or followup.
         `,
-        model: togetherVercelAiClient(ctx.togetherApiKey)(
-          "meta-llama/Llama-3.3-70B-Instruct-Turbo"
-        ),
+        model: localLLMClient(getLocalLLMModel()),
         maxTokens: 10,
       });
 
@@ -175,9 +175,27 @@ export const whisperRouter = t.router({
       // Only allow the owner to delete
       const whisper = await prisma.whisper.findUnique({
         where: { id: input.id },
+        include: { audioTracks: true }
       });
       if (!whisper) throw new Error("Whisper not found");
       if (whisper.userId !== ctx.auth.userId) throw new Error("Unauthorized");
+
+      // Delete associated local files
+      for (const track of whisper.audioTracks) {
+        if (track.fileUrl) {
+          const filename = getFilenameFromUrl(track.fileUrl);
+          if (filename) {
+            const uploadDir = process.env.LOCAL_UPLOAD_DIR || './public/uploads';
+            const filePath = `${uploadDir}/${filename}`;
+            try {
+              await deleteFileLocally(filePath);
+            } catch (error) {
+              console.error(`Failed to delete local file: ${filePath}`, error);
+              // Continue with database deletion even if file deletion fails
+            }
+          }
+        }
+      }
 
       // Delete all related Transformations first
       await prisma.transformation.deleteMany({

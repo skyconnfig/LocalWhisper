@@ -1,0 +1,103 @@
+# 开发环境 Docker Compose 配置
+# 使用方法: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+version: '3.8'
+
+services:
+  # Next.js Application - Development Override
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      target: development
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_BASE_URL=http://localhost:3000
+      - CHOKIDAR_USEPOLLING=true  # For hot reload in Docker
+    volumes:
+      # 挂载源代码用于热重载
+      - ./:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "3000:3000"
+      - "3001:3001"  # Next.js dev server
+    command: pnpm dev
+    restart: "no"  # 开发环境不自动重启
+
+  # PostgreSQL - Development
+  postgres:
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=whisper_dev
+      - POSTGRES_USER=dev_user
+      - POSTGRES_PASSWORD=dev_password
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+
+  # Redis - Development
+  redis:
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server 
+      --requirepass dev123
+      --appendonly yes
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+
+  # MinIO - Development
+  minio:
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=devadmin
+      - MINIO_ROOT_PASSWORD=devadmin123
+    volumes:
+      - minio_dev_data:/data
+
+  # MinIO Init - Development
+  minio_init:
+    entrypoint: >
+      /bin/sh -c "
+      echo 'Waiting for MinIO to be ready...';
+      sleep 10;
+      /usr/bin/mc alias set myminio http://minio:9000 devadmin devadmin123;
+      /usr/bin/mc mb myminio/dev-audio-files --ignore-existing;
+      /usr/bin/mc mb myminio/dev-temp-files --ignore-existing;
+      /usr/bin/mc policy set public myminio/dev-audio-files;
+      /usr/bin/mc policy set public myminio/dev-temp-files;
+      echo 'Development MinIO buckets initialized successfully';
+      exit 0;
+      "
+
+  # Ollama - Development (可选的轻量化模型)
+  ollama:
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_dev_data:/root/.ollama
+
+  # Ollama Init - Development (拉取轻量化模型)
+  ollama_init:
+    entrypoint: >
+      /bin/sh -c "
+      echo 'Waiting for Ollama to be ready...';
+      sleep 30;
+      echo 'Pulling lightweight models for development...';
+      ollama pull tinyllama:1.1b || echo 'TinyLlama model pull failed';
+      ollama pull nomic-embed-text:latest || echo 'Embedding model pull failed';
+      echo 'Development Ollama models initialized successfully';
+      exit 0;
+      "
+
+volumes:
+  postgres_dev_data:
+    driver: local
+  minio_dev_data:
+    driver: local
+  ollama_dev_data:
+    driver: local

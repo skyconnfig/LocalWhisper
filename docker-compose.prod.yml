@@ -1,0 +1,180 @@
+# 生产环境 Docker Compose 配置
+# 使用方法: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up
+
+version: '3.8'
+
+services:
+  # Next.js Application - Production Override
+  app:
+    image: whisper-app:production
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_BASE_URL=${NEXT_PUBLIC_BASE_URL:-https://yourdomain.com}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-https://yourdomain.com}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+    restart: always
+    # 生产环境资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "0.5"
+        reservations:
+          memory: 512M
+    # 生产环境不暴露内部端口
+    ports: []
+    # 使用Nginx代理，所以不直接暴露端口
+
+  # Nginx 反向代理 (生产环境)
+  nginx:
+    image: nginx:alpine
+    container_name: whisper_nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - app
+    networks:
+      - whisper_network
+
+  # PostgreSQL - Production
+  postgres:
+    environment:
+      - POSTGRES_DB=whisper_production
+      - POSTGRES_USER=${POSTGRES_USER:-whisper_prod_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+      - ./database/backups:/backups
+    # 生产环境不暴露数据库端口
+    ports: []
+    # 生产环境资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "1.0"
+
+  # Redis - Production  
+  redis:
+    command: >
+      redis-server 
+      --requirepass ${REDIS_PASSWORD}
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --tcp-keepalive 300
+      --timeout 0
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    volumes:
+      - redis_prod_data:/data
+      - ./redis/redis.conf:/etc/redis/redis.conf:ro
+    # 生产环境不暴露Redis端口
+    ports: []
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # MinIO - Production
+  minio:
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_prod_data:/data
+      - ./minio/certs:/root/.minio/certs:ro
+    # 生产环境通过Nginx代理
+    ports: []
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # MinIO Init - Production
+  minio_init:
+    entrypoint: >
+      /bin/sh -c "
+      echo 'Waiting for MinIO to be ready...';
+      sleep 15;
+      /usr/bin/mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
+      /usr/bin/mc mb myminio/audio-files --ignore-existing;
+      /usr/bin/mc mb myminio/temp-files --ignore-existing;
+      /usr/bin/mc policy set download myminio/audio-files;
+      /usr/bin/mc policy set download myminio/temp-files;
+      echo 'Production MinIO buckets initialized successfully';
+      exit 0;
+      "
+
+  # Ollama - Production (可选GPU支持)
+  ollama:
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          devices:
+            - capabilities: [gpu]
+              count: all
+    # 生产环境通过内网访问
+    ports: []
+    # 启用GPU支持 (如果有NVIDIA GPU)
+    # runtime: nvidia
+    # environment:
+    #   - NVIDIA_VISIBLE_DEVICES=all
+
+  # PostgreSQL 自动备份
+  postgres_backup:
+    image: postgres:16-alpine
+    container_name: whisper_postgres_backup
+    depends_on:
+      - postgres
+    environment:
+      - POSTGRES_DB=whisper_production
+      - POSTGRES_USER=${POSTGRES_USER:-whisper_prod_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - PGPASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - ./database/backups:/backups
+      - ./scripts/backup.sh:/backup.sh:ro
+    entrypoint: >
+      /bin/sh -c "
+      chmod +x /backup.sh;
+      crond -f;
+      "
+    networks:
+      - whisper_network
+    restart: always
+
+  # 监控服务 (可选)
+  watchtower:
+    image: containrrr/watchtower
+    container_name: whisper_watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_POLL_INTERVAL=86400  # 24小时检查一次更新
+      - WATCHTOWER_CLEANUP=true
+    restart: always
+
+volumes:
+  postgres_prod_data:
+    driver: local
+  redis_prod_data:
+    driver: local
+  minio_prod_data:
+    driver: local
+  nginx_logs:
+    driver: local

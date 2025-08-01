@@ -1,14 +1,7 @@
-import { Ratelimit } from "@upstash/ratelimit";
-import { Redis } from "@upstash/redis";
 import { clerkClient } from "@clerk/nextjs/server";
+import { redisClient, LocalRateLimit } from "./redis";
 
-const redis =
-  !!process.env.UPSTASH_REDIS_REST_URL && !!process.env.UPSTASH_REDIS_REST_TOKEN
-    ? new Redis({
-        url: process.env.UPSTASH_REDIS_REST_URL,
-        token: process.env.UPSTASH_REDIS_REST_TOKEN,
-      })
-    : undefined;
+const redis = redisClient;
 
 const isLocal = process.env.NODE_ENV !== "production";
 
@@ -20,10 +13,10 @@ const WINDOW = "1440 m"; // 1 day
 // Minutes per day limiters
 const minutesLimiter =
   !isLocal && redis
-    ? new Ratelimit({
+    ? new LocalRateLimit({
         redis: redis,
-        limiter: Ratelimit.fixedWindow(MINUTES_LIMIT_DEFAULT, WINDOW),
-        analytics: true,
+        limit: MINUTES_LIMIT_DEFAULT,
+        window: WINDOW,
         prefix: "minutes-limiter",
       })
     : undefined;
@@ -31,10 +24,10 @@ const minutesLimiter =
 // Transformations per day limiters
 const transformLimiter =
   !isLocal && redis
-    ? new Ratelimit({
+    ? new LocalRateLimit({
         redis: redis,
-        limiter: Ratelimit.fixedWindow(TRANSFORM_LIMIT_DEFAULT, WINDOW),
-        analytics: true,
+        limit: TRANSFORM_LIMIT_DEFAULT,
+        window: WINDOW,
         prefix: "transform-limiter",
       })
     : undefined;

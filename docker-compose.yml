@@ -1,0 +1,218 @@
+version: '3.8'
+
+services:
+  # Next.js Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: whisper_app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Database
+      DATABASE_URL: postgresql://whisper_user:whisper_password@postgres:5432/whisper_db
+      
+      # Redis
+      REDIS_URL: redis://:redis123@redis:6379
+      
+      # MinIO Storage
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin123
+      MINIO_REGION: us-east-1
+      MINIO_BUCKET_NAME: audio-files
+      MINIO_TEMP_BUCKET_NAME: temp-files
+      STORAGE_STRATEGY: minio
+      
+      # File configuration
+      MAX_FILE_SIZE: 100MB
+      ALLOWED_AUDIO_FORMATS: mp3,wav,m4a,ogg,flac,aac,wma,webm,mp4
+      TEMP_FILE_CLEANUP_INTERVAL: 3600000
+      AUTO_DELETE_AFTER_DAYS: 30
+      
+      # Application
+      NODE_ENV: production
+      NEXT_PUBLIC_BASE_URL: http://localhost:3000
+      
+      # Local AI Services
+      OLLAMA_BASE_URL: http://ollama:11434
+      LOCAL_WHISPER_ENABLED: true
+      LOCAL_LLM_ENABLED: true
+      
+      # Disable telemetry
+      NEXT_TELEMETRY_DISABLED: 1
+    volumes:
+      - app_uploads:/app/public/uploads  # For local file uploads
+    networks:
+      - whisper_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Ollama AI Service
+  ollama:
+    image: ollama/ollama:latest
+    container_name: whisper_ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    volumes:
+      - ollama_data:/root/.ollama  # AI model storage
+    networks:
+      - whisper_network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+              count: all
+    # GPU access (uncomment if you have NVIDIA GPU)
+    # runtime: nvidia
+    # environment:
+    #   - NVIDIA_VISIBLE_DEVICES=all
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: whisper_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: whisper_db
+      POSTGRES_USER: whisper_user
+      POSTGRES_PASSWORD: whisper_password
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+    networks:
+      - whisper_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U whisper_user -d whisper_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for rate limiting and caching
+  redis:
+    image: redis:7-alpine
+    container_name: whisper_redis
+    restart: unless-stopped
+    command: >
+      redis-server 
+      --requirepass redis123
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --tcp-keepalive 300
+      --timeout 0
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - whisper_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis123", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MinIO Object Storage
+  minio:
+    image: minio/minio:latest
+    container_name: whisper_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    ports:
+      - "9000:9000"  # MinIO API
+      - "9001:9001"  # MinIO Console
+    volumes:
+      - minio_data:/data
+    networks:
+      - whisper_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # MinIO Client for bucket initialization
+  minio_init:
+    image: minio/mc:latest
+    container_name: whisper_minio_init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      echo 'Waiting for MinIO to be ready...';
+      sleep 10;
+      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin123;
+      /usr/bin/mc mb myminio/audio-files --ignore-existing;
+      /usr/bin/mc mb myminio/temp-files --ignore-existing;
+      /usr/bin/mc policy set public myminio/audio-files;
+      /usr/bin/mc policy set public myminio/temp-files;
+      echo 'MinIO buckets initialized successfully';
+      exit 0;
+      "
+    networks:
+      - whisper_network
+
+  # Ollama Model Initialization
+  ollama_init:
+    image: ollama/ollama:latest
+    container_name: whisper_ollama_init
+    depends_on:
+      ollama:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+      echo 'Waiting for Ollama to be ready...';
+      sleep 30;
+      echo 'Pulling Whisper model...';
+      ollama pull whisper:latest || echo 'Whisper model pull failed or already exists';
+      echo 'Pulling LLM model (llama3.1)...';
+      ollama pull llama3.1:8b || echo 'LLM model pull failed or already exists';
+      echo 'Ollama models initialized successfully';
+      exit 0;
+      "
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    networks:
+      - whisper_network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local
+  ollama_data:
+    driver: local
+  app_uploads:
+    driver: local
+
+networks:
+  whisper_network:
+    driver: bridge

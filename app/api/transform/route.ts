@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { PrismaClient } from "@/lib/generated/prisma";
 import { streamText } from "ai";
-import { togetherVercelAiClient } from "@/lib/apiClients";
+import { togetherVercelAiClient, createLocalLLMClient, getLocalLLMModel } from "@/lib/apiClients";
 import { RECORDING_TYPES } from "@/lib/utils";
 import { getAuth } from "@clerk/nextjs/server";
 
@@ -71,10 +71,10 @@ export async function POST(req: NextRequest) {
   Do not add phrases like "Based on the transcription" or "Let me know if you'd like me to help with anything else."
   `;
 
-  // Start streaming
-  const aiClient = togetherVercelAiClient(apiKey);
+  // Start streaming with local LLM
+  const localLLMClient = createLocalLLMClient();
   const { textStream } = streamText({
-    model: aiClient("meta-llama/Meta-Llama-3-70B-Instruct-Turbo"),
+    model: localLLMClient(getLocalLLMModel()),
     prompt,
   });
 
