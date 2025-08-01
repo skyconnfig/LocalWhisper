@@ -1,39 +1,144 @@
-<a href="https://github.com/nutlope/whisper-app">
-  <img alt="Whisper App" src="./public/og.jpg">
-  <h1 align="center">Whisper App</h1>
+<a href="https://github.com/skyconnfig/LocalWhisper">
+  <img alt="LocalWhisper - Self-Hosted Audio Transcription" src="./public/og.jpg">
+  <h1 align="center">LocalWhisper</h1>
 </a>
 
 <p align="center">
-  An open source audio transcription and transformation app. Powered by Together.ai.
+  A fully self-hosted audio transcription and transformation app. Complete privacy, zero cloud dependencies.
 </p>
 
-## Tech stack
+<p align="center">
+  <strong>Transform any Whisper app into a local, privacy-first solution</strong>
+</p>
 
-- Together.ai for LLM-powered audio transcription and transformation
-- Vercel's AI SDK as the LLM framework
-- Clerk for authentication
-- Neon for postgres
-- Next.js App Router
-- S3 for object storage (audio files)
-- Upstash Redis for rate limiting
-- Prisma for ORM
-- Vercel for hosting
+## 🌟 Why LocalWhisper?
 
-## How it works
+- **🔒 Complete Privacy**: All audio processing happens locally - your data never leaves your machine
+- **💰 Zero Cloud Costs**: No API fees, no subscription costs, no usage limits  
+- **🚀 Offline Ready**: Works without internet connection once set up
+- **⚡ High Performance**: Local AI models with optimized performance
+- **🛠️ Fully Customizable**: Use your own AI models and configurations
+- **🐳 Docker Ready**: One-command deployment with Docker
 
-1. Create an account on the site with Clerk
-2. Upload an audio file, which gets uploaded to S3
-3. The audio is transcribed using Together.ai's Whisper model
-4. Optionally, transform the transcription using LLMs (summarize, extract, etc.)
-5. View and manage your transcriptions in your dashboard
+## 🏗️ Local Tech Stack
 
-## Cloning & running
+- **Local AI**: Ollama + Whisper models (replaces Together.ai)
+- **Authentication**: NextAuth.js (replaces Clerk)
+- **Database**: Local PostgreSQL (replaces Neon)
+- **Storage**: MinIO or local filesystem (replaces AWS S3)
+- **Cache**: Local Redis (replaces Upstash)
+- **Framework**: Next.js 15 + React 19 + TypeScript
+- **Deployment**: Docker Compose with full orchestration
 
-1. Fork or clone the repo
-2. Create an account at [Together AI](https://togetherai.link) for the LLM
-3. Create an account at [Upstash](https://upstash.com/) for Redis
-4. Create an account at [AWS](https://aws.amazon.com/) for S3
-5. Create an account at [Neon](https://neon.com/) for the DB
-6. Create a Clerk account at [Clerk](https://clerk.com/) for authentication
-7. Create a `.env` file (use `.example.env` for reference) and add your API keys
-8. Run `pnpm install` and `pnpm run dev` to install dependencies and start the app locally
+## 🎯 How LocalWhisper Works
+
+1. **Register/Login** with local NextAuth.js authentication
+2. **Upload Audio** to local MinIO or filesystem storage
+3. **AI Transcription** using local Whisper models (faster-whisper)
+4. **Content Transformation** with local LLMs (Llama 3.1, Qwen 2.5)
+5. **Manage History** in your private local database
+
+## ⚡ Quick Start
+
+### One-Click Deployment (Recommended)
+```bash
+git clone https://github.com/skyconnfig/LocalWhisper.git
+cd LocalWhisper
+./deploy.sh
+```
+
+### Quick Development Setup
+```bash
+./quick-start.sh
+```
+
+### Manual Setup
+```bash
+# Install dependencies
+npm install
+
+# Start local services
+docker-compose up -d
+
+# Run database migrations
+npm run db:push
+
+# Start the app
+npm run dev
+```
+
+## 📋 System Requirements
+
+- **OS**: Windows 11, macOS, or Linux
+- **RAM**: 8GB minimum, 16GB recommended
+- **Storage**: 10GB for AI models + your audio files
+- **Docker**: Required for easy deployment
+- **Optional**: GPU for faster AI processing
+
+## 🔧 Supported AI Models
+
+### Whisper Models (Speech-to-Text)
+- `base` - Fast, good quality (142MB)
+- `medium` - **Recommended balance** (769MB)
+- `large-v3` - Best accuracy (1.55GB)
+
+### LLM Models (Text Processing)
+- `llama3.1:8b` - English content processing
+- `qwen2.5:7b` - Chinese content processing  
+- `gemma2:9b` - Lightweight alternative
+
+## 🌐 Access Your LocalWhisper
+
+After deployment:
+- **Main App**: http://localhost:3000
+- **MinIO Console**: http://localhost:9001 (admin UI)
+- **Database Studio**: Run `npm run studio`
+
+## 📚 Documentation
+
+- [📖 Complete Deployment Guide](./docs/main/LOCAL_DEPLOYMENT_GUIDE.md)
+- [⚡ Quick Start Tutorial](./docs/main/QUICK_START_GUIDE.md)
+- [🔧 Configuration Options](./docs/user/CONFIGURATION.md)
+- [🏗️ Architecture Overview](./docs/technical/ARCHITECTURE.md)
+- [❓ FAQ & Troubleshooting](./docs/user/FAQ.md)
+- [📋 Full Documentation Index](./DOCUMENTATION_INDEX.md)
+
+## 🧪 Testing
+
+Run comprehensive tests to verify your deployment:
+```bash
+npm run test           # Full test suite
+npm run test:quick     # Quick functionality check
+npm run test:health    # System health check
+```
+
+## 🔄 Migration from Cloud Version
+
+LocalWhisper provides seamless migration from cloud-based Whisper apps:
+
+- **From Together.ai**: Automatic local AI integration
+- **From Clerk**: Smooth NextAuth.js transition  
+- **From AWS S3**: Local file system or MinIO setup
+- **From Upstash**: Local Redis configuration
+
+See [Migration Guide](./docs/main/LOCAL_DEPLOYMENT_GUIDE.md#migration) for details.
+
+## 🤝 Contributing
+
+We welcome contributions! See [Contributing Guide](./docs/developer/CONTRIBUTING.md) for details.
+
+## 📄 License
+
+MIT License - see [LICENSE](./LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- Built upon the excellent [Whisper App](https://github.com/nutlope/whisper-app) foundation
+- Powered by [OpenAI Whisper](https://github.com/openai/whisper) and [Ollama](https://ollama.ai)
+- UI components from [Radix UI](https://radix-ui.com) and [Tailwind CSS](https://tailwindcss.com)
+
+---
+
+<p align="center">
+  <strong>⭐ Star this repo if LocalWhisper helps you build privacy-first AI applications!</strong>
+</p>
